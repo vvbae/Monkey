@@ -42,6 +42,8 @@ func (ins Instructions) fmtInstruction(def *Definition, operands []int) string {
 		return def.Name
 	case 1:
 		return fmt.Sprintf("%s %d", def.Name, operands[0])
+	case 2:
+		return fmt.Sprintf("%s %d %d", def.Name, operands[0], operands[1])
 	}
 
 	return fmt.Sprintf("ERROR: unhandled operandCount for %s\n", def.Name)
@@ -53,33 +55,47 @@ const (
 	OpConstant Opcode = iota
 	OpAdd
 	OpPop
-
+	// arithmetic
 	OpSub
 	OpMul
 	OpDiv
-
+	// boolean
 	OpTrue
 	OpFalse
-
+	// logical
 	OpEqual
 	OpNotEqual
 	OpGreaterThan
-
+	// prefix
 	OpMinus
 	OpBang
-
+	// jump
 	OpJumpNotTruthy
 	OpJump
-
+	// null
 	OpNull
-
+	// global bindings
 	OpGetGlobal
 	OpSetGlobal
-
+	// data structures
 	OpArray
 	OpHash
-
+	// index
 	OpIndex
+	// function calls
+	OpCall
+	// return
+	OpReturnValue
+	OpReturn
+	// local bindings
+	OpGetLocal
+	OpSetLocal
+	// builtin scope
+	OpGetBuiltin
+	// closure
+	OpClosure
+	// free variables
+	OpGetFree
 )
 
 type Definition struct {
@@ -88,9 +104,9 @@ type Definition struct {
 }
 
 var definitions = map[Opcode]*Definition{
-	OpConstant:      {"OpConstant", []int{2}}, // uint16, ~65535
-	OpAdd:           {"OpAdd", []int{}},       // +
-	OpPop:           {"OpPop", []int{}},
+	OpConstant:      {"OpConstant", []int{2}},      // uint16, ~65535
+	OpAdd:           {"OpAdd", []int{}},            // +
+	OpPop:           {"OpPop", []int{}},            // pop value from the stack
 	OpSub:           {"OpSub", []int{}},            // -
 	OpMul:           {"OpMul", []int{}},            // *
 	OpDiv:           {"OpDiv", []int{}},            // /
@@ -103,12 +119,20 @@ var definitions = map[Opcode]*Definition{
 	OpBang:          {"OpBang", []int{}},           // !
 	OpJumpNotTruthy: {"OpJumpNotTruthy", []int{2}}, // jump to location if not true
 	OpJump:          {"OpJump", []int{2}},          // jump to location
-	OpNull:          {"OpNull", []int{}},
-	OpGetGlobal:     {"OpGetGlobal", []int{2}}, // bind value to variable
-	OpSetGlobal:     {"OpSetGlobal", []int{2}}, // get value of the variable
-	OpArray:         {"OpArray", []int{2}},     // number of elements ~65535
-	OpHash:          {"OpHash", []int{2}},      // length of the hashmap
-	OpIndex:         {"OpIndex", []int{}},      // index and array are stored before
+	OpNull:          {"OpNull", []int{}},           // null
+	OpGetGlobal:     {"OpGetGlobal", []int{2}},     // bind value to global variable
+	OpSetGlobal:     {"OpSetGlobal", []int{2}},     // get value of the global variable
+	OpArray:         {"OpArray", []int{2}},         // number of elements ~65535
+	OpHash:          {"OpHash", []int{2}},          // length of the hashmap
+	OpIndex:         {"OpIndex", []int{}},          // index and array are stored before
+	OpCall:          {"OpCall", []int{1}},          // function call with arg number
+	OpReturnValue:   {"OpReturnValue", []int{}},    // return the value sitting on top of the stack
+	OpReturn:        {"OpReturn", []int{}},         // just return, no value
+	OpGetLocal:      {"OpGetLocal", []int{1}},      // bind value to local variable
+	OpSetLocal:      {"OpSetLocal", []int{1}},      // get value of local variable
+	OpGetBuiltin:    {"OpGetBuiltin", []int{1}},    // index of the function
+	OpClosure:       {"OpClosure", []int{2, 1}},    // constant index: for locating *object.CompiledFunction, free variable count
+	OpGetFree:       {"OpGetFree", []int{1}},       // number of free variables
 }
 
 func Lookup(op byte) (*Definition, error) {
@@ -141,6 +165,8 @@ func Make(op Opcode, operands ...int) []byte {
 		switch width {
 		case 2:
 			binary.BigEndian.PutUint16(instruction[offset:], uint16(o))
+		case 1:
+			instruction[offset] = byte(o)
 		}
 		offset += width
 	}
@@ -157,6 +183,8 @@ func ReadOperands(def *Definition, ins Instructions) ([]int, int) {
 		switch width {
 		case 2:
 			operands[i] = int(ReadUint16(ins[offset:]))
+		case 1:
+			operands[i] = int(ReadUint8(ins[offset:]))
 		}
 
 		offset += width
@@ -167,4 +195,8 @@ func ReadOperands(def *Definition, ins Instructions) ([]int, int) {
 
 func ReadUint16(ins Instructions) uint16 {
 	return binary.BigEndian.Uint16(ins)
+}
+
+func ReadUint8(ins Instructions) uint8 {
+	return uint8(ins[0])
 }
